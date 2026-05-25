@@ -1,0 +1,6 @@
+rootProject.name = 'TicTacToe'
+
+include 'game-engine-service'
+include 'game-session-service'
+include 'ui-service'
+include 'api-gateway'
