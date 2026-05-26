@@ -10,6 +10,7 @@ import org.example.engine.exception.InvalidMoveException;
 import org.example.engine.storage.GameStore;
 import org.springframework.stereotype.Service;
 
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -56,9 +57,8 @@ public class GameEngineService {
     }
 
     public Game getGame(UUID id) {
-        Game game = games.get(id);
-        if (game == null) throw new GameNotFoundException(id);
-        return game;
+        return Optional.ofNullable(games.get(id))
+                .orElseThrow(() -> new GameNotFoundException(id));
     }
 
     public Game applyMove(UUID gameId, Player player, int row, int col) {

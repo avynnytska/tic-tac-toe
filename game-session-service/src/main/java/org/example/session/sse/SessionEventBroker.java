@@ -1,4 +1,4 @@
-package org.example.session.event;
+package org.example.session.sse;
 
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;

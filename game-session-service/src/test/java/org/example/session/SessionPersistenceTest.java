@@ -97,7 +97,7 @@ class SessionPersistenceTest {
         SessionService recovered = new SessionService(
                 null /* engineClient — unused for read */,
                 null /* strategy — unused */,
-                new org.example.session.event.SessionEventBroker(),
+                new org.example.session.sse.SessionEventBroker(),
                 new JpaSessionStore(repository, sessionMapper, moveMapper),
                 0L
         );

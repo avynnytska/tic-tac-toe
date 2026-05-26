@@ -1,6 +1,6 @@
 # Distributed Tic Tac Toe
 
-Four Spring Boot microservices that play Tic Tac Toe against themselves and stream the game to a browser UI.
+Four Spring Boot microservices that play Tic Tac Toe automatically and stream the game to a browser UI. The UI also includes an extra **Play Manually** mode, so a user can create a session and submit moves directly through the engine API in addition to the required automated simulation.
 
 ```
 ┌──────────────┐     ┌─────────────┐     ┌─────────────────┐     ┌────────────────┐
@@ -36,7 +36,10 @@ You need four terminals (one per service):
 ./gradlew :ui-service:bootRun              # :8080
 ```
 
-Then open <http://localhost:8080> and click **Start Simulation**.
+Then open <http://localhost:8080>.
+
+* Click **Start Simulation** to run the required automated microservice-vs-microservice game.
+* Click **Play Manually** to use the optional manual mode, where the UI submits moves to the engine through the gateway.
 
 ## Testing
 
@@ -70,7 +73,7 @@ Through the **gateway** (recommended):
 
 The services are also reachable directly on `:8081` (engine) and `:8082` (session) without `/api` prefix.
 
-Error codes: `404` not found, `422` invalid move, `400` validation, `502` upstream engine error.
+Error codes: `404` not found, `409` conflict, `422` invalid move, `400` validation, `502` upstream engine error.
 
 ## Project layout
 
@@ -90,7 +93,7 @@ TicTacToe/
 │   └── src/main/java/org/example/session/
 │       ├── domain/        Session, Move, ...
 │       ├── service/       SessionService (simulation loop + write-through)
-│       ├── storage/       SessionStorage, JpaSessionStorage, SessionRepository, entity/*
+│       ├── storage/       SessionStore, JpaSessionStore, SessionRepository, entity/*
 │       ├── mapper/        SessionMapper, MoveMapper
 │       ├── strategy/      MoveStrategy + RandomMoveStrategy
 │       ├── client/        EngineClient (RestClient wrapper)
@@ -119,15 +122,13 @@ The in-memory `ConcurrentHashMap` remains the source of truth at runtime, but ev
 
 * No JPA transactions on the hot path of move handling — keeps the synchronization model simple.
 * Full recovery after a restart (verified by `GamePersistenceTest` and `SessionPersistenceTest`).
-* A `GameStore` / `SessionStorage` interface with a `NOOP` implementation, so unit tests don't need a database.
+* A `GameStore` / `SessionStore` interface with a `NOOP` implementation, so unit tests don't need a database.
 
 The default DB URL is file-based (`jdbc:h2:file:./data/...;AUTO_SERVER=TRUE`). Tests use `jdbc:h2:mem:...` overrides.
 
-Trade-off: this write-through design duplicates state between memory and the database. If a mutation succeeds in memory but the following database write fails, the two states can diverge until the service is restarted or the failure is handled manually. For a production version, the database could become the primary source of truth with transactions and optimistic locking, or the service could add retry/rollback logic around failed writes.
-
 ### API Gateway
 
-Spring Cloud Gateway is not yet released for Spring Boot 4.0 (the latest train, `2025.0.0`, targets Spring Boot 3.5). This project therefore implements the gateway as a small **Spring MVC reverse proxy** (`ProxyController`) — it forwards REST calls with `RestClient` and streams SSE by piping the upstream connection into an `SseEmitter`. CORS is handled at the gateway, so individual services don't need their own CORS config.
+At the time of implementation, Spring Cloud Gateway was not used because of Spring Boot 4 compatibility concerns. This project therefore implements the gateway as a small **Spring MVC reverse proxy** (`ProxyController`) — it forwards REST calls with `RestClient` and streams SSE by piping the upstream connection into an `SseEmitter`. CORS is handled at the gateway, so individual services don't need their own CORS config.
 
 When Spring Cloud Gateway becomes SB4-compatible, the proxy controller can be replaced with declarative routes in `application.yml`:
 
@@ -152,7 +153,27 @@ SSE end-to-end: `SessionService.simulate` publishes `state`, `move`, and `finish
 
 ### Move pacing
 
-`session.move-delay-ms` (default `400` in production, `0` in tests) inserts a short pause between moves so the UI animation reads naturally. Tests override to `0` to keep them fast.
+`session.move-delay-ms` (default `1500` in production, `0` in tests) inserts a short pause between moves so the UI animation reads naturally. Tests override to `0` to keep them fast.
+
+## Technical Debt / Trade-offs
+
+**Write-through persistence can diverge from memory.** The services keep active state in memory and write every mutation to H2. If a mutation succeeds in memory but the following database write fails, the two states can diverge until restart or manual recovery. A production version should either make the database the primary source of truth with transactions and optimistic locking, or add retry/rollback logic around failed writes.
+
+**SSE subscriptions are in-memory.** `SessionEventBroker` keeps active `SseEmitter` connections in the session-service process. This is fine for a single instance, but multiple session-service instances would need sticky sessions or an external pub/sub layer so simulation events reach the same instance that owns the browser stream.
+
+**The gateway is a custom MVC proxy.** Spring Cloud Gateway was not used because of Spring Boot 4 compatibility concerns at the time this project was built. The custom proxy keeps the assignment runnable, but a production setup should prefer a standard gateway once the dependency stack is compatible.
+
+**H2 is file-based for local recovery.** Runtime DB files are created under each service's `data/` directory. This is useful for demonstrating restart recovery, but production deployments should use managed persistent storage and migration tooling.
+
+## Discussion
+
+SSE was chosen for real-time updates because the game is automated and the browser only needs one-way server-to-client events. This is simpler than WebSockets while still satisfying the optional real-time update requirement.
+
+Alternative approaches:
+
+* **Polling**: simpler, but less real-time and creates repeated `GET /sessions/{id}` traffic.
+* **WebSockets**: useful for bidirectional interactive gameplay, but unnecessary for an automated simulation where the UI only listens.
+* **External pub/sub**: Redis Pub/Sub, Kafka, or RabbitMQ would support multiple session-service instances, but would add infrastructure beyond the assignment scope.
 
 ## Possible extensions
 

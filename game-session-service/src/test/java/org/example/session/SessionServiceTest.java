@@ -10,7 +10,7 @@ import org.example.session.exception.SessionAlreadyRunningException;
 import org.example.session.exception.SessionNotFoundException;
 import org.example.session.storage.SessionStore;
 import org.example.session.service.SessionService;
-import org.example.session.event.SessionEventBroker;
+import org.example.session.sse.SessionEventBroker;
 import org.example.session.strategy.RandomMoveStrategy;
 import org.junit.jupiter.api.Test;
 

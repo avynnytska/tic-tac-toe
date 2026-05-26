@@ -11,7 +11,7 @@ import org.example.session.exception.EngineCommunicationException;
 import org.example.session.exception.SessionAlreadyRunningException;
 import org.example.session.exception.SessionNotFoundException;
 import org.example.session.storage.SessionStore;
-import org.example.session.event.SessionEventBroker;
+import org.example.session.sse.SessionEventBroker;
 import org.example.session.strategy.MoveStrategy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -57,18 +58,17 @@ public class SessionService {
     public Session createSession() {
         UUID sessionId = UUID.randomUUID();
         UUID gameId = sessionId;
-        EngineGameState state = requireEngineState(engineClient.createGame(gameId), "create game");
+        EngineGameState gameState = requireEngineState(engineClient.createGame(gameId), "create game");
         Session session = new Session(sessionId, gameId);
-        updateSessionFromEngineState(session, state);
+        updateSessionFromEngineGameState(session, gameState);
         sessions.put(sessionId, session);
         sessionStore.save(session);
         return session;
     }
 
     public Session getSession(UUID id) {
-        Session s = sessions.get(id);
-        if (s == null) throw new SessionNotFoundException(id);
-        return s;
+        return Optional.ofNullable(sessions.get(id))
+                .orElseThrow(() -> new SessionNotFoundException(id));
     }
 
     public Session simulate(UUID sessionId) {
@@ -82,19 +82,19 @@ public class SessionService {
 
     private Session runSimulation(UUID sessionId) {
         Session session = getSession(sessionId);
-        EngineGameState state = requireEngineState(engineClient.getGame(session.getGameId()), "get game");
-        broker.publish(sessionId, "state", state);
+        EngineGameState gameState = requireEngineState(engineClient.getGame(session.getGameId()), "get game");
+        broker.publish(sessionId, "state", gameState);
 
-        while (!state.status().isFinished()) {
-            Player current = state.nextPlayer();
-            int[] move = strategy.nextMove(state.board(), current);
-            state = requireEngineState(
+        while (!gameState.status().isFinished()) {
+            Player current = gameState.nextPlayer();
+            int[] move = strategy.nextMove(gameState.board(), current);
+            gameState = requireEngineState(
                     engineClient.applyMove(session.getGameId(), current, move[0], move[1]),
                     "apply move"
             );
             Move recorded = new Move(current, move[0], move[1], Instant.now());
-            recordMove(session, recorded, state);
-            broker.publish(sessionId, "move", new MovePayload(recorded, state));
+            recordMove(session, recorded, gameState);
+            broker.publish(sessionId, "move", new MovePayload(recorded, gameState));
 
             if (moveDelayMs > 0) {
                 try {
@@ -105,7 +105,7 @@ public class SessionService {
                 }
             }
         }
-        broker.publish(sessionId, "finished", state);
+        broker.publish(sessionId, "finished", gameState);
         broker.complete(sessionId);
         return session;
     }
@@ -140,11 +140,11 @@ public class SessionService {
 
     private void recordMove(Session session, Move move, EngineGameState state) {
         session.addMove(move);
-        updateSessionFromEngineState(session, state);
+        updateSessionFromEngineGameState(session, state);
         sessionStore.save(session);
     }
 
-    private void updateSessionFromEngineState(Session session, EngineGameState state) {
+    private void updateSessionFromEngineGameState(Session session, EngineGameState state) {
         session.setBoard(Objects.requireNonNull(state.board(), "Engine game board must not be null"));
         session.setStatus(Objects.requireNonNull(state.status(), "Engine game status must not be null"));
         session.setWinner(state.winner());

@@ -4,7 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.session.domain.Session;
 import org.example.session.mapper.SessionMapper;
 import org.example.session.service.SessionService;
-import org.example.session.event.SessionEventBroker;
+import org.example.session.sse.SessionEventBroker;
 import org.example.session.web.dto.SessionResponse;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
