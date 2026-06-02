@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: engine
+              uri: ${gateway.routes.engine:http://localhost:8081}
+              predicates:
+                - Path=/api/engine/**
+              filters:
+                - StripPrefix=2
+            - id: session
+              uri: ${gateway.routes.session:http://localhost:8082}
+              predicates:
+                - Path=/api/sessions/**
+              filters:
+                - StripPrefix=1
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowedOrigins:
+                  - http://localhost:8080
+                  - http://127.0.0.1:8080
+                allowedMethods:
+                  - GET
+                  - POST
+                  - OPTIONS
+                allowedHeaders:
+                  - '*'
+
+server:
+  port: 8000
